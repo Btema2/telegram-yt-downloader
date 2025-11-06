@@ -28,7 +28,7 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-# Для macOS/Linux
+Для macOS/Linux
 ```bash
 python3 -m venv venv
 ```
