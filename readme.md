@@ -19,18 +19,16 @@ cd telegram-yt-downloader.git
 ```
 
 **2. Створіть та активуйте віртуальне середовище:**
-```bash
-# Для Windows
-```
+
+Для Windows
 ```bash
 python -m venv venv
 ```
 ```bash
 venv\Scripts\activate
 ```
-```bash
+
 # Для macOS/Linux
-```
 ```bash
 python3 -m venv venv
 ```
