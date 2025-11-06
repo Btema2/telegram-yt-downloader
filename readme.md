@@ -12,6 +12,8 @@
 
 **1. Клонуйте репозиторій:**```bash
 git clone https://github.com/Btema2/telegram-yt-downloader.git
+```
+```bash
 cd telegram-yt-downloader.git```
 
 
@@ -20,22 +22,23 @@ cd telegram-yt-downloader.git```
 # Для Windows
 python -m venv venv
 venv\Scripts\activate
-
+```. 
+```bash
 # Для macOS/Linux
 python3 -m venv venv
 source venv/bin/activate
-```
+```. 
 
 **3. Встановіть залежності:**
 ```bash
 pip install -r requirements.txt
-```
+```. 
 
 **4. Налаштуйте змінні середовища:**
 Скопіюйте файл `.env.example` та перейменуйте його на `.env`.
 ```bash
 cp .env.example .env
-```
+```. 
 Відкрийте файл `.env` та заповніть його своїми даними:
 - `TELEGRAM_BOT_TOKEN`: Отримайте у [@BotFather](https://t.me/BotFather).
 - `ALLOWED_USER_IDS`: Вкажіть ваш Telegram ID та ID інших довірених користувачів через кому без пробілів.
