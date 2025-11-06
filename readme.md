@@ -12,7 +12,7 @@
 
 **1. Клонуйте репозиторій:**```bash
 git clone https://github.com/Btema2/telegram-yt-downloader.git
-cd telegram-yt-downloader.git
+cd telegram-yt-downloader.git```
 ```
 
 **2. Створіть та активуйте віртуальне середовище:**
