@@ -127,7 +127,7 @@ def download_audio_from_ytmusic(url: str) -> Optional[str]:
                     if matches:
                         thumbnail_path = matches[0]
                         break
-            
+            #123
             if not thumbnail_path or not os.path.exists(thumbnail_path):
                 print(f"Warning: Thumbnail file not found", file=sys.stderr)
             else:
