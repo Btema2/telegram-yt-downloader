@@ -47,6 +47,14 @@ cp .env.example .env
 Відкрийте файл `.env` та заповніть його своїми даними:
 - `TELEGRAM_BOT_TOKEN`: Отримайте у [@BotFather](https://t.me/BotFather).
 - `ALLOWED_USER_IDS`: Вкажіть ваш Telegram ID та ID інших довірених користувачів через кому без пробілів.
+- `INSTAGRAM_USERNAME`: Вклажіть instagram username.
+
+**5. Вхід в instaloader:**
+Напишіть команду
+``` bash
+instaloader --login=YOUR_USERNAME
+```
+Та ввійдіть в свій профіль інстаграм
 
 ---
 

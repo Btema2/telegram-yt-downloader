@@ -1,28 +1,27 @@
-#main_bot.py
 import asyncio
 import logging
 import os
+import shutil
 from functools import wraps
 from typing import List
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-# Додано імпорти для медіагруп
 from aiogram.types import (FSInputFile, InlineKeyboardButton,
                            InlineKeyboardMarkup, InputMediaPhoto,
                            InputMediaVideo)
-from dotenv import load_dotenv
 
 from downloader_lib import download_media, get_available_formats
 
 # --- Налаштування ---
-load_dotenv()
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
-# Ліміт для фотографій трохи менший
 TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024 # 10 MB
 logging.basicConfig(level=logging.INFO)
 
@@ -97,7 +96,9 @@ def get_youtube_keyboard():
 async def send_welcome(message: types.Message):
     await message.reply(
         "Привіт! 👋\n\nЯ універсальний завантажувач медіа.\n"
-        "Просто надішли мені посилання, і я все зроблю!"
+        "Просто надішли мені посилання, і я все зроблю!\n\n"
+        "📸 **Instagram:** Для завантаження всіх фото з каруселі потрібні cookies.\n"
+        "Детальніше: https://github.com/yt-dlp/yt-dlp#authentication-with-cookies"
     )
 
 
@@ -153,7 +154,6 @@ async def handle_url(message: types.Message, state: FSMContext):
 
     url = message.text.strip()
     
-    # Визначаємо, чи обробляти як аудіо за замовчуванням
     is_audio_service = "music.youtube.com" in url or "soundcloud.com" in url
     
     if is_audio_service:
@@ -165,7 +165,6 @@ async def handle_url(message: types.Message, state: FSMContext):
         )
         await state.update_data(url=url)
     else:
-        # Для всіх інших посилань (включаючи Instagram)
         await process_download(message, url, audio_only=False)
 
 
@@ -174,19 +173,35 @@ async def process_download(
 ):
     msg = await message.reply("📥 Завантаження почалося...")
     file_paths: List[str] | None = None
+    download_dir: str | None = None
 
     try:
         file_paths = await download_media(
             url, audio_only=audio_only, format_id=format_id
         )
 
-        if not (file_paths and all(os.path.exists(p) for p in file_paths)):
-            await msg.edit_text("❌ Не вдалося завантажити медіа.")
-            return
+        if file_paths:
+            download_dir = os.path.dirname(file_paths[0])
 
-        # --- НОВА ЛОГІКА ОБРОБКИ ФАЙЛІВ ---
+        if not file_paths:
+            error_msg = "❌ Не вдалося завантажити медіа."
+            
+            if "instagram.com" in url:
+                error_msg += (
+                    "\n\n⚠️ **Для Instagram потрібна авторизація!**\n\n"
+                    "Щоб завантажити всі фото/відео з каруселі:\n"
+                    "1️⃣ Встанови розширення 'Get cookies.txt LOCALLY'\n"
+                    "2️⃣ Увійди в Instagram у браузері\n"
+                    "3️⃣ Експортуй cookies у файл\n"
+                    "4️⃣ Вкажи шлях у .env: `INSTAGRAM_COOKIES_PATH=шлях`\n\n"
+                    "Без cookies завантажується тільки перший елемент каруселі."
+                )
+            
+            await msg.edit_text(error_msg, parse_mode="Markdown")
+            return
         
-        # 1. Обробка аудіо (залишається простою, бо зазвичай це один файл)
+        logging.info(f"Готово до відправки {len(file_paths)} файлів")
+
         if audio_only:
             await msg.edit_text("🚀 Надсилаю аудіо...")
             for file_path in file_paths:
@@ -194,61 +209,77 @@ async def process_download(
             await msg.delete()
             return
 
-        # 2. Обробка фото та відео
         media_to_send = []
+        files_too_large = []
+        
         for file_path in file_paths:
             file_size = os.path.getsize(file_path)
             ext = os.path.splitext(file_path)[1].lower()
             
-            # Перевірка розміру
             limit = TELEGRAM_PHOTO_LIMIT if ext in ['.jpg', '.jpeg', '.png', '.webp'] else TELEGRAM_FILE_LIMIT
+            
             if file_size > limit:
                 file_size_mb = file_size / 1024 / 1024
-                error_message = (
-                    f"❌ **Один з файлів занадто великий** ({file_size_mb:.1f} МБ).\n\n"
-                    f"Telegram обмежує розмір файлів (до 50 МБ для відео/документів та 10 МБ для фото)."
-                )
-                await msg.edit_text(error_message, parse_mode="Markdown")
-                return # Перериваємо всю операцію
+                files_too_large.append(f"{os.path.basename(file_path)} ({file_size_mb:.1f} МБ)")
+                continue
 
-            # Створюємо об'єкти для медіагрупи
             if ext in ['.jpg', '.jpeg', '.png', '.webp']:
                 media_to_send.append(InputMediaPhoto(media=FSInputFile(file_path)))
             elif ext in ['.mp4', '.mkv', '.avi', '.mov']:
                 media_to_send.append(InputMediaVideo(media=FSInputFile(file_path)))
             else:
-                 logging.warning(f"Невідомий тип файлу: {file_path}. Спробую надіслати як документ.")
-                 # Якщо щось невідоме - можна спробувати як документ, але поки пропускаємо
-                 pass
+                logging.warning(f"Невідомий тип файлу: {file_path}. Пропускаю.")
+        
+        if files_too_large:
+            error_message = (
+                f"⚠️ **Деякі файли занадто великі для Telegram:**\n"
+                + "\n".join(f"• {f}" for f in files_too_large) +
+                "\n\nTelegram обмежує розмір файлів (до 50 МБ для відео та 10 МБ для фото)."
+            )
+            if media_to_send:
+                error_message += "\n\n✅ Інші файли будуть надіслані."
+            else:
+                await msg.edit_text(error_message, parse_mode="Markdown")
+                return
+            await message.reply(error_message, parse_mode="Markdown")
         
         if not media_to_send:
             await msg.edit_text("❌ Не знайдено медіафайлів для надсилання.")
             return
 
-        await msg.edit_text("🚀 Надсилаю файли...")
+        await msg.edit_text(f"🚀 Надсилаю {len(media_to_send)} файл(ів)...")
 
-        # Надсилаємо один файл або групу
         if len(media_to_send) > 1:
-            await message.reply_media_group(media=media_to_send)
+            for i in range(0, len(media_to_send), 10):
+                batch = media_to_send[i:i+10]
+                await message.reply_media_group(media=batch)
         elif len(media_to_send) == 1:
-            # Використовуємо відповідний метод для одного файлу
-            single_file_path = file_paths[0]
-            if isinstance(media_to_send[0], InputMediaPhoto):
-                await message.reply_photo(FSInputFile(single_file_path))
+            single_media = media_to_send[0]
+            if isinstance(single_media, InputMediaPhoto):
+                await message.reply_photo(single_media.media)
             else:
-                await message.reply_video(FSInputFile(single_file_path))
+                await message.reply_video(single_media.media)
 
         await msg.delete()
+        
+        if "instagram.com" in url and len(file_paths) == 1 and len(media_to_send) == 1:
+            await message.reply(
+                "⚠️ Завантажено лише 1 файл.\n\n"
+                "Якщо це карусель з кількома фото/відео, вам потрібна авторизація через cookies.\n"
+                "Детальніше: напишіть /start",
+                parse_mode="Markdown"
+            )
 
     except Exception as e:
         logging.error(f"Помилка в process_download: {e}", exc_info=True)
         await msg.edit_text(f"❌ Сталася неочікувана помилка: {e}")
     finally:
-        # Очищуємо всі завантажені файли
-        if file_paths:
-            for file_path in file_paths:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+        if download_dir and os.path.exists(download_dir):
+            try:
+                shutil.rmtree(download_dir)
+                logging.info(f"Видалено директорію: {download_dir}")
+            except Exception as e:
+                logging.error(f"Не вдалося видалити директорію {download_dir}: {e}")
 
 
 async def main() -> None:
