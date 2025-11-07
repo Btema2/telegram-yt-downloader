@@ -2,3 +2,5 @@ yt-dlp
 aiogram>=3.0.0
 python-dotenv
 colorama
+Pillow
+mutagen
