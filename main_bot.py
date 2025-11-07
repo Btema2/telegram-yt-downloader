@@ -1,14 +1,19 @@
+#main_bot.py
 import asyncio
 import logging
 import os
 from functools import wraps
+from typing import List
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+# Додано імпорти для медіагруп
+from aiogram.types import (FSInputFile, InlineKeyboardButton,
+                           InlineKeyboardMarkup, InputMediaPhoto,
+                           InputMediaVideo)
 from dotenv import load_dotenv
 
 from downloader_lib import download_media, get_available_formats
@@ -16,13 +21,13 @@ from downloader_lib import download_media, get_available_formats
 # --- Налаштування ---
 load_dotenv()
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024
+TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
+# Ліміт для фотографій трохи менший
+TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024 # 10 MB
 logging.basicConfig(level=logging.INFO)
 
 # --- Зчитування списку дозволених ID з .env ---
-# У .env файлі це має виглядати так: ALLOWED_USER_IDS=12345678,98765432,11122233
 ALLOWED_IDS_STR = os.getenv("ALLOWED_USER_IDS", "")
-# Використовуємо set для дуже швидкої перевірки
 ALLOWED_USER_IDS = {
     int(user_id) for user_id in ALLOWED_IDS_STR.split(",") if user_id.strip()
 }
@@ -42,20 +47,18 @@ def allowed_users_only(func):
 
     @wraps(func)
     async def wrapper(update: types.Update, *args, **kwargs):
-        # Визначаємо, звідки прийшов запит (повідомлення чи кнопка)
         if isinstance(update, types.CallbackQuery):
             user_id = update.from_user.id
-            message = update.message  # Щоб мати куди відповідати
+            message = update.message
         elif isinstance(update, types.Message):
             user_id = update.from_user.id
             message = update
         else:
-            return  # Невідомий тип оновлення
+            return
 
         if user_id in ALLOWED_USER_IDS:
             return await func(update, *args, **kwargs)
         else:
-            # Відповідаємо користувачу, що йому відмовлено у доступі
             await message.reply(
                 "❌ **Доступ обмежено.**\n\n"
                 "Вас немає у системі. Для отримання доступу, будь ласка, зверніться до розробників",
@@ -145,13 +148,15 @@ async def process_manual_format_id(message: types.Message, state: FSMContext):
 @dp.message(F.text)
 @allowed_users_only
 async def handle_url(message: types.Message, state: FSMContext):
-    # Перевіряємо, чи є в тексті посилання, щоб бот не реагував на звичайні повідомлення в групі
     if not ("http" in message.text and " " not in message.text.strip()):
         return
 
     url = message.text.strip()
-
-    if "music.youtube.com" in url:
+    
+    # Визначаємо, чи обробляти як аудіо за замовчуванням
+    is_audio_service = "music.youtube.com" in url or "soundcloud.com" in url
+    
+    if is_audio_service:
         await process_download(message, url, audio_only=True)
     elif "youtube.com" in url or "youtu.be" in url:
         await message.reply(
@@ -160,52 +165,90 @@ async def handle_url(message: types.Message, state: FSMContext):
         )
         await state.update_data(url=url)
     else:
+        # Для всіх інших посилань (включаючи Instagram)
         await process_download(message, url, audio_only=False)
 
 
 async def process_download(
     message: types.Message, url: str, audio_only: bool = False, format_id: str = None
 ):
-    # Використовуємо .reply(), щоб в групі було зрозуміло, на яке повідомлення відповідає бот
     msg = await message.reply("📥 Завантаження почалося...")
-    file_path = None
+    file_paths: List[str] | None = None
 
     try:
-        file_path = await download_media(
+        file_paths = await download_media(
             url, audio_only=audio_only, format_id=format_id
         )
 
-        if not (file_path and os.path.exists(file_path)):
+        if not (file_paths and all(os.path.exists(p) for p in file_paths)):
             await msg.edit_text("❌ Не вдалося завантажити медіа.")
             return
 
-        file_size = os.path.getsize(file_path)
-
-        if file_size > TELEGRAM_FILE_LIMIT:
-            file_size_mb = file_size / 1024 / 1024
-            error_message = (
-                f"❌ **Файл занадто великий** ({file_size_mb:.1f} МБ).\n\n"
-                "Telegram не дозволяє ботам надсилати файли понад 50 МБ.\n\n"
-                "**💡 Що робити?**\n"
-                "Надішліть посилання ще раз і натисніть '⚙️ Вибрати якість вручну', "
-                "а потім оберіть формат з меншою роздільною здатністю."
-            )
-            await msg.edit_text(error_message, parse_mode="Markdown")
+        # --- НОВА ЛОГІКА ОБРОБКИ ФАЙЛІВ ---
+        
+        # 1. Обробка аудіо (залишається простою, бо зазвичай це один файл)
+        if audio_only:
+            await msg.edit_text("🚀 Надсилаю аудіо...")
+            for file_path in file_paths:
+                await message.reply_audio(FSInputFile(file_path))
+            await msg.delete()
             return
 
-        await msg.edit_text("🚀 Надсилаю файл...")
-        if audio_only:
-            await message.reply_audio(FSInputFile(file_path))
-        else:
-            await message.reply_video(FSInputFile(file_path))
+        # 2. Обробка фото та відео
+        media_to_send = []
+        for file_path in file_paths:
+            file_size = os.path.getsize(file_path)
+            ext = os.path.splitext(file_path)[1].lower()
+            
+            # Перевірка розміру
+            limit = TELEGRAM_PHOTO_LIMIT if ext in ['.jpg', '.jpeg', '.png', '.webp'] else TELEGRAM_FILE_LIMIT
+            if file_size > limit:
+                file_size_mb = file_size / 1024 / 1024
+                error_message = (
+                    f"❌ **Один з файлів занадто великий** ({file_size_mb:.1f} МБ).\n\n"
+                    f"Telegram обмежує розмір файлів (до 50 МБ для відео/документів та 10 МБ для фото)."
+                )
+                await msg.edit_text(error_message, parse_mode="Markdown")
+                return # Перериваємо всю операцію
+
+            # Створюємо об'єкти для медіагрупи
+            if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                media_to_send.append(InputMediaPhoto(media=FSInputFile(file_path)))
+            elif ext in ['.mp4', '.mkv', '.avi', '.mov']:
+                media_to_send.append(InputMediaVideo(media=FSInputFile(file_path)))
+            else:
+                 logging.warning(f"Невідомий тип файлу: {file_path}. Спробую надіслати як документ.")
+                 # Якщо щось невідоме - можна спробувати як документ, але поки пропускаємо
+                 pass
+        
+        if not media_to_send:
+            await msg.edit_text("❌ Не знайдено медіафайлів для надсилання.")
+            return
+
+        await msg.edit_text("🚀 Надсилаю файли...")
+
+        # Надсилаємо один файл або групу
+        if len(media_to_send) > 1:
+            await message.reply_media_group(media=media_to_send)
+        elif len(media_to_send) == 1:
+            # Використовуємо відповідний метод для одного файлу
+            single_file_path = file_paths[0]
+            if isinstance(media_to_send[0], InputMediaPhoto):
+                await message.reply_photo(FSInputFile(single_file_path))
+            else:
+                await message.reply_video(FSInputFile(single_file_path))
 
         await msg.delete()
 
     except Exception as e:
+        logging.error(f"Помилка в process_download: {e}", exc_info=True)
         await msg.edit_text(f"❌ Сталася неочікувана помилка: {e}")
     finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        # Очищуємо всі завантажені файли
+        if file_paths:
+            for file_path in file_paths:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
 
 
 async def main() -> None:
