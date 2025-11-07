@@ -48,7 +48,6 @@ async def download_media(url: str, audio_only: bool = False, format_id: str = No
         print(f"Помилка завантаження: {e}")
         return None
 
-# --- ПОВНІСТЮ ОНОВЛЕНА ФУНКЦІЯ ---
 async def get_available_formats(url: str) -> str | None:
     """
     Повертає відформатований та ВІДФІЛЬТРОВАНИЙ рядок зі списком доступних форматів,
