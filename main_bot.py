@@ -6,23 +6,28 @@ from functools import wraps
 from typing import List
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import (FSInputFile, InlineKeyboardButton,
-                           InlineKeyboardMarkup, InputMediaPhoto,
-                           InputMediaVideo)
+from aiogram import Bot, Dispatcher, F, types  # noqa: E402
+from aiogram.filters import CommandStart  # noqa: E402
+from aiogram.fsm.context import FSMContext  # noqa: E402
+from aiogram.fsm.state import State, StatesGroup  # noqa: E402
+from aiogram.fsm.storage.memory import MemoryStorage  # noqa: E402
+from aiogram.types import (  # noqa: E402
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+    InputMediaVideo,
+)
 
-from downloader_lib import download_media, get_available_formats
+from downloader_lib import download_media, get_available_formats  # noqa: E402
 
 # --- Налаштування ---
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
-TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024 # 10 MB
+TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024  # 10 MB
 logging.basicConfig(level=logging.INFO)
 
 # --- Зчитування списку дозволених ID з .env ---
@@ -153,9 +158,9 @@ async def handle_url(message: types.Message, state: FSMContext):
         return
 
     url = message.text.strip()
-    
+
     is_audio_service = "music.youtube.com" in url or "soundcloud.com" in url
-    
+
     if is_audio_service:
         await process_download(message, url, audio_only=True)
     elif "youtube.com" in url or "youtu.be" in url:
@@ -185,7 +190,7 @@ async def process_download(
 
         if not file_paths:
             error_msg = "❌ Не вдалося завантажити медіа."
-            
+
             if "instagram.com" in url:
                 error_msg += (
                     "\n\n⚠️ **Для Instagram потрібна авторизація!**\n\n"
@@ -196,10 +201,10 @@ async def process_download(
                     "4️⃣ Вкажи шлях у .env: `INSTAGRAM_COOKIES_PATH=шлях`\n\n"
                     "Без cookies завантажується тільки перший елемент каруселі."
                 )
-            
+
             await msg.edit_text(error_msg, parse_mode="Markdown")
             return
-        
+
         logging.info(f"Готово до відправки {len(file_paths)} файлів")
 
         if audio_only:
@@ -211,30 +216,36 @@ async def process_download(
 
         media_to_send = []
         files_too_large = []
-        
+
         for file_path in file_paths:
             file_size = os.path.getsize(file_path)
             ext = os.path.splitext(file_path)[1].lower()
-            
-            limit = TELEGRAM_PHOTO_LIMIT if ext in ['.jpg', '.jpeg', '.png', '.webp'] else TELEGRAM_FILE_LIMIT
-            
+
+            limit = (
+                TELEGRAM_PHOTO_LIMIT
+                if ext in [".jpg", ".jpeg", ".png", ".webp"]
+                else TELEGRAM_FILE_LIMIT
+            )
+
             if file_size > limit:
                 file_size_mb = file_size / 1024 / 1024
-                files_too_large.append(f"{os.path.basename(file_path)} ({file_size_mb:.1f} МБ)")
+                files_too_large.append(
+                    f"{os.path.basename(file_path)} ({file_size_mb:.1f} МБ)"
+                )
                 continue
 
-            if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+            if ext in [".jpg", ".jpeg", ".png", ".webp"]:
                 media_to_send.append(InputMediaPhoto(media=FSInputFile(file_path)))
-            elif ext in ['.mp4', '.mkv', '.avi', '.mov']:
+            elif ext in [".mp4", ".mkv", ".avi", ".mov"]:
                 media_to_send.append(InputMediaVideo(media=FSInputFile(file_path)))
             else:
                 logging.warning(f"Невідомий тип файлу: {file_path}. Пропускаю.")
-        
+
         if files_too_large:
             error_message = (
-                f"⚠️ **Деякі файли занадто великі для Telegram:**\n"
-                + "\n".join(f"• {f}" for f in files_too_large) +
-                "\n\nTelegram обмежує розмір файлів (до 50 МБ для відео та 10 МБ для фото)."
+                "⚠️ **Деякі файли занадто великі для Telegram:**\n"
+                + "\n".join(f"• {f}" for f in files_too_large)
+                + "\n\nTelegram обмежує розмір файлів (до 50 МБ для відео та 10 МБ для фото)."
             )
             if media_to_send:
                 error_message += "\n\n✅ Інші файли будуть надіслані."
@@ -242,7 +253,7 @@ async def process_download(
                 await msg.edit_text(error_message, parse_mode="Markdown")
                 return
             await message.reply(error_message, parse_mode="Markdown")
-        
+
         if not media_to_send:
             await msg.edit_text("❌ Не знайдено медіафайлів для надсилання.")
             return
@@ -251,7 +262,7 @@ async def process_download(
 
         if len(media_to_send) > 1:
             for i in range(0, len(media_to_send), 10):
-                batch = media_to_send[i:i+10]
+                batch = media_to_send[i : i + 10]
                 await message.reply_media_group(media=batch)
         elif len(media_to_send) == 1:
             single_media = media_to_send[0]
@@ -261,13 +272,13 @@ async def process_download(
                 await message.reply_video(single_media.media)
 
         await msg.delete()
-        
+
         if "instagram.com" in url and len(file_paths) == 1 and len(media_to_send) == 1:
             await message.reply(
                 "⚠️ Завантажено лише 1 файл.\n\n"
                 "Якщо це карусель з кількома фото/відео, вам потрібна авторизація через cookies.\n"
                 "Детальніше: напишіть /start",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
     except Exception as e:
