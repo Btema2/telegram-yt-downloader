@@ -1,14 +1,14 @@
+import glob
 import os
 import sys
-import glob
-from typing import Optional
 from io import BytesIO
+from typing import Optional
 
 import yt_dlp
 from colorama import Fore, Style, init
-from PIL import Image
+from mutagen.id3 import APIC, ID3, TDRC, error
 from mutagen.mp3 import MP3
-from mutagen.id3 import APIC, error, ID3, TDRC
+from PIL import Image
 
 # Ініціалізація colorama
 init(autoreset=True)
@@ -29,13 +29,13 @@ def clear_screen():
 def print_banner():
     """Малює красивий банер."""
     banner = r"""
+______ _____  _    _ _   _  _     _____  ___ ______ ___________ 
+|  _  \  _  || |  | | \ | || |   |  _  |/ _ \|  _  \  ___| ___ \
+| | | | | | || |  | |  \| || |   | | | / /_\ \ | | | |__ | |_/ /
+| | | | | | || |/\| | . ` || |   | | | |  _  | | | |  __||    / 
+| |/ /\ \_/ /\  /\  / |\  || |___\ \_/ / | | | |/ /| |___| |\ \ 
+|___/  \___/  \/  \/\_| \_/\_____/\___/\_| |_/___/ \____/\_| \_|                                                                                                                
     
-__________ ________ __________ 
-\______   \\_____  \\______   \
- |    |  _/ /   |   \|    |  _/
- |    |   \/    |    \    |   \
- |______  /\_______  /______  /
-        \/         \/       \/ 
     """
     print(HEADER + banner)
     print(INFO + "    Welcome to the ultimate console media downloader!")
@@ -52,12 +52,12 @@ def _crop_and_embed_artwork(mp3_path: str, thumbnail_path: str):
         with Image.open(thumbnail_path) as img:
             width, height = img.size
             crop_size = min(width, height)
-            
+
             left = (width - crop_size) / 2
             top = (height - crop_size) / 2
             right = (width + crop_size) / 2
             bottom = (height + crop_size) / 2
-            
+
             cropped_img = img.crop((left, top, right, bottom))
 
             # Вбудовуємо обрізане зображення
@@ -66,25 +66,28 @@ def _crop_and_embed_artwork(mp3_path: str, thumbnail_path: str):
             except error:
                 audio = MP3(mp3_path)
                 audio.add_tags()
-            
-            audio.tags.delall('APIC')
-            
+
+            audio.tags.delall("APIC")
+
             img_buffer = BytesIO()
-            if cropped_img.mode in ('RGBA', 'LA', 'P'):
-                cropped_img = cropped_img.convert('RGB')
-            cropped_img.save(img_buffer, format='JPEG', quality=95)
-            
+            if cropped_img.mode in ("RGBA", "LA", "P"):
+                cropped_img = cropped_img.convert("RGB")
+            cropped_img.save(img_buffer, format="JPEG", quality=95)
+
             audio.tags.add(
                 APIC(
                     encoding=3,
-                    mime='image/jpeg',
+                    mime="image/jpeg",
                     type=3,
-                    desc='Cover',
-                    data=img_buffer.getvalue()
+                    desc="Cover",
+                    data=img_buffer.getvalue(),
                 )
             )
             audio.save()
-            print(SUCCESS + f"✓ Embedded cropped artwork into {os.path.basename(mp3_path)}")
+            print(
+                SUCCESS
+                + f"✓ Embedded cropped artwork into {os.path.basename(mp3_path)}"
+            )
 
     except Exception as e:
         print(ERROR + f"Warning: Could not process or embed artwork: {e}")
@@ -98,11 +101,11 @@ def _fix_date_metadata(mp3_path: str):
     """Виправляє дату в метаданих, залишаючи тільки рік."""
     try:
         audio = MP3(mp3_path, ID3=ID3)
-        if audio.tags and 'TDRC' in audio.tags:
-            date_str = str(audio.tags['TDRC'].text[0])
+        if audio.tags and "TDRC" in audio.tags:
+            date_str = str(audio.tags["TDRC"].text[0])
             if len(date_str) >= 4:
                 year = date_str[:4]
-                audio.tags['TDRC'] = TDRC(encoding=3, text=year)
+                audio.tags["TDRC"] = TDRC(encoding=3, text=year)
                 audio.save()
                 print(SUCCESS + f"✓ Fixed date metadata to year only: {year}")
     except Exception as e:
@@ -119,7 +122,9 @@ def get_available_formats(url: str):
             info = ydl.extract_info(url, download=False)
 
         print(SUCCESS + "✅ Formats found! Here are the best options:\n")
-        print(PROMPT + f"{'ID':<8} | {'Extension':<10} | {'Resolution':<20} | {'Notes'}")
+        print(
+            PROMPT + f"{'ID':<8} | {'Extension':<10} | {'Resolution':<20} | {'Notes'}"
+        )
         print("-" * 70)
 
         filtered_formats = []
@@ -159,7 +164,10 @@ def get_available_formats(url: str):
             )
 
         print("-" * 70)
-        print(INFO + "💡 Tip: For best quality, combine video and audio IDs with '+', e.g., 137+140")
+        print(
+            INFO
+            + "💡 Tip: For best quality, combine video and audio IDs with '+', e.g., 137+140"
+        )
 
     except Exception as e:
         print(ERROR + f"❌ Failed to get formats: {e}")
@@ -185,7 +193,7 @@ def progress_hook(d):
             )
             sys.stdout.flush()
     elif d["status"] == "finished":
-        print(SUCCESS + f"\n✅ Download finished!")
+        print(SUCCESS + "\n✅ Download finished!")
 
 
 def download_ytmusic_with_metadata(url: str) -> Optional[str]:
@@ -197,63 +205,70 @@ def download_ytmusic_with_metadata(url: str) -> Optional[str]:
     os.makedirs(audio_dir, exist_ok=True)
 
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': os.path.join(audio_dir, '%(title)s.%(ext)s'),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }, {
-            'key': 'FFmpegMetadata',
-        }],
-        'writethumbnail': True,
-        'progress_hooks': [progress_hook],
+        "format": "bestaudio/best",
+        "outtmpl": os.path.join(audio_dir, "%(title)s.%(ext)s"),
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            },
+            {
+                "key": "FFmpegMetadata",
+            },
+        ],
+        "writethumbnail": True,
+        "progress_hooks": [progress_hook],
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(INFO + "\n📥 Downloading audio with metadata...")
             info = ydl.extract_info(url, download=True)
-            
+
             base_path = ydl.prepare_filename(info)
-            mp3_path = os.path.splitext(base_path)[0] + '.mp3'
-            
+            mp3_path = os.path.splitext(base_path)[0] + ".mp3"
+
             if not os.path.exists(mp3_path):
-                raise FileNotFoundError(f"Postprocessing failed to create MP3 file: {mp3_path}")
-            
+                raise FileNotFoundError(
+                    f"Postprocessing failed to create MP3 file: {mp3_path}"
+                )
+
             print(SUCCESS + f"✓ Audio downloaded: {os.path.basename(mp3_path)}")
-            
+
             # Шукаємо файл обкладинки
             base_name = os.path.splitext(base_path)[0]
-            possible_extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+            possible_extensions = ["jpg", "jpeg", "png", "webp", "gif"]
             thumbnail_path = None
-            
+
             for ext in possible_extensions:
                 candidate = f"{base_name}.{ext}"
                 if os.path.exists(candidate):
                     thumbnail_path = candidate
                     break
-            
+
             if not thumbnail_path:
                 download_dir = os.path.dirname(base_path)
-                title = info.get('title', '')
+                title = info.get("title", "")
                 for ext in possible_extensions:
                     pattern = os.path.join(download_dir, f"{title}.{ext}")
                     matches = glob.glob(pattern)
                     if matches:
                         thumbnail_path = matches[0]
                         break
-            
+
             if thumbnail_path and os.path.exists(thumbnail_path):
-                print(SUCCESS + f"✓ Thumbnail found: {os.path.basename(thumbnail_path)}")
+                print(
+                    SUCCESS + f"✓ Thumbnail found: {os.path.basename(thumbnail_path)}"
+                )
                 _crop_and_embed_artwork(mp3_path, thumbnail_path)
             else:
                 print(ERROR + "Warning: Thumbnail file not found")
-            
+
             _fix_date_metadata(mp3_path)
-            
+
             return mp3_path
-            
+
     except Exception as e:
         print(ERROR + f"❌ An error occurred: {e}")
         return None
@@ -266,11 +281,11 @@ def download_media(url: str, audio_only: bool = False, format_id: str = None):
 
     if not format_id:
         format_id = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-    
+
     ydl_opts = {
-        'format': format_id,
-        'outtmpl': os.path.join(video_dir, '%(title)s.%(ext)s'),
-        'progress_hooks': [progress_hook],
+        "format": format_id,
+        "outtmpl": os.path.join(video_dir, "%(title)s.%(ext)s"),
+        "progress_hooks": [progress_hook],
     }
 
     try:
