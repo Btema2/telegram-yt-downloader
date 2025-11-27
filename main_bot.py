@@ -2,266 +2,290 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
-import time
 from functools import wraps
-from typing import List, Optional
+from typing import Optional
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-from aiogram import Bot, Dispatcher, F, types  # noqa: E402
-from aiogram.filters import CommandStart  # noqa: E402
-from aiogram.fsm.context import FSMContext  # noqa: E402
-from aiogram.fsm.state import State, StatesGroup  # noqa: E402
-from aiogram.fsm.storage.memory import MemoryStorage  # noqa: E402
-from aiogram.types import (  # noqa: E402
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
     InputMediaVideo,
 )
+from dotenv import load_dotenv
 
-from downloader_lib import download_media, get_available_formats  # noqa: E402
+from downloader_lib import download_media
 
-# --- Налаштування (без змін) ---
+load_dotenv()
+
+# --- КОНФІГУРАЦІЯ ---
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024
-TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024
+# Ліміт для локального сервера (2 ГБ)
+LOCAL_SERVER_LIMIT = 2000 * 1024 * 1024
 logging.basicConfig(level=logging.INFO)
+
 ALLOWED_IDS_STR = os.getenv("ALLOWED_USER_IDS", "")
 ALLOWED_USER_IDS = {int(uid) for uid in ALLOWED_IDS_STR.split(",") if uid.strip()}
-if not ALLOWED_USER_IDS:
-    logging.warning("Увага: список дозволених ID порожній!")
+
+LOCAL_API_URL = os.getenv("LOCAL_API_URL")
+
+session = None
+if LOCAL_API_URL:
+    print(f"🔌 Використовується локальний Bot API сервер: {LOCAL_API_URL}")
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base(LOCAL_API_URL),
+        timeout=7200,  # 2 години таймаут
+    )
+
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 
-# --- ДЕКОРАТОР (ПОВЕРНЕНО ДО НАДІЙНОЇ ВЕРСІЇ) ---
+# --- ДЕКОРАТОР ---
 def allowed_users_only(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        # Перший аргумент - це завжди об'єкт події (Message або CallbackQuery)
         event = args[0]
-
         user = event.from_user
-
-        # Визначаємо, куди відповідати
         if isinstance(event, types.Message):
-            message_to_reply = event
+            pass
         elif isinstance(event, types.CallbackQuery):
-            message_to_reply = event.message
+            pass
         else:
-            return  # Невідомий тип події
-
-        if user and message_to_reply and user.id in ALLOWED_USER_IDS:
+            return
+        if user and user.id in ALLOWED_USER_IDS:
             return await func(*args, **kwargs)
-        elif message_to_reply:
-            await message_to_reply.reply(
-                "❌ **Доступ обмежено.**", parse_mode="Markdown"
-            )
 
     return wrapper
 
 
-class DownloadStates(StatesGroup):
-    awaiting_format_id = State()
-
-
-def get_youtube_keyboard():
+# --- КЛАВІАТУРА ---
+def get_quality_keyboard():
     buttons = [
         [
             InlineKeyboardButton(
-                text="📥 Відео (найкраща якість)", callback_data="yt_best_video"
-            )
+                text="💎 Найкраща (1080p+)", callback_data="qual_best"
+            ),
+            InlineKeyboardButton(text="ᴴᴰ 720p", callback_data="qual_720"),
         ],
-        [InlineKeyboardButton(text="🎵 Аудіо (MP3)", callback_data="yt_audio_only")],
+        [
+            InlineKeyboardButton(text="📺 480p", callback_data="qual_480"),
+            InlineKeyboardButton(text="📱 360p", callback_data="qual_360"),
+        ],
         [
             InlineKeyboardButton(
-                text="⚙️ Вибрати якість вручну", callback_data="yt_choose_quality"
+                text="🎵 Тільки аудіо (MP3)", callback_data="qual_audio"
             )
         ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-# --- Обробники з доданим декоратором ---
+# --- ДОПОМІЖНІ ---
+def extract_url(text: str) -> Optional[str]:
+    match = re.search(r"(https?://[^\s]+)", text)
+    return match.group(1) if match else None
+
+
+# --- ОБРОБНИКИ ---
+
+
 @dp.message(CommandStart())
 @allowed_users_only
-async def send_welcome(message: types.Message, *args, **kwargs):
-    await message.reply(
-        "Привіт! 👋\n\nЯ універсальний завантажувач медіа.\nПросто надішли мені посилання, і я все зроблю!"
-    )
+async def send_welcome(message: types.Message):
+    await message.reply("Привіт! Надішли посилання.\n\nКоманди:\n/clean - очистити кеш")
 
 
-@dp.callback_query(F.data.startswith("yt_"))
+# --- КОМАНДА CLEAN ---
+@dp.message(Command("clean"))
 @allowed_users_only
-async def handle_youtube_choice(
-    callback_query: types.CallbackQuery, state: FSMContext, *args, **kwargs
-):
-    await callback_query.message.edit_text("Обробляю ваш вибір...")
-    action = callback_query.data
-    user_data = await state.get_data()
-    url = user_data.get("url")
-    if not url:
-        await callback_query.message.edit_text("Помилка: URL не знайдено.")
+async def handle_clean(message: types.Message):
+    status_msg = await message.reply("🧹 Аналіз папки завантажень...")
+    base_dir = "downloads"
+    if not os.path.exists(base_dir):
+        await status_msg.edit_text("✅ Папка чиста.")
         return
-    if action == "yt_best_video":
-        await process_download(callback_query.message, url, audio_only=False)
-    elif action == "yt_audio_only":
-        await process_download(callback_query.message, url, audio_only=True)
-    elif action == "yt_choose_quality":
-        formats_text = await get_available_formats(url)
-        await callback_query.message.answer(
-            f"Ось доступні формати:\n\n{formats_text}\n\nНадішліть мені ID бажаного формату.",
-            parse_mode="Markdown",
+
+    deleted_files = 0
+    deleted_folders = 0
+    try:
+        for filename in os.listdir(base_dir):
+            file_path = os.path.join(base_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                    deleted_files += 1
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                    deleted_folders += 1
+            except Exception as e:
+                logging.debug(f"Could not remove {file_path}: {e}")
+        await status_msg.edit_text(
+            f"✅ Очищено.\nПапок: {deleted_folders}\nФайлів: {deleted_files}"
         )
-        await state.set_state(DownloadStates.awaiting_format_id)
-    await callback_query.answer()
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Помилка: {e}")
 
 
-@dp.message(DownloadStates.awaiting_format_id)
+@dp.callback_query(F.data.startswith("qual_"))
 @allowed_users_only
-async def process_manual_format_id(
-    message: types.Message, state: FSMContext, *args, **kwargs
-):
-    format_id = message.text
-    user_data = await state.get_data()
-    url = user_data.get("url")
-    if not url or not format_id:
-        await message.reply("Щось пішло не так, URL або ID формату не знайдено.")
-        await state.clear()
+async def handle_quality_choice(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer("⏳ Додано в чергу...", show_alert=False)
+    await callback.message.edit_text("⏳ Ініціалізація...")
+
+    data = await state.get_data()
+    url = data.get("url")
+    if not url:
+        await callback.message.edit_text("❌ Посилання втрачено.")
         return
-    await message.reply(
-        f"Прийнято ID: `{format_id}`. Починаю завантаження...", parse_mode="Markdown"
+
+    action = callback.data
+    audio_only = action == "qual_audio"
+    max_height = None
+    if action == "qual_720":
+        max_height = 720
+    elif action == "qual_480":
+        max_height = 480
+    elif action == "qual_360":
+        max_height = 360
+
+    await process_download(
+        callback.message, url, audio_only=audio_only, max_height=max_height
     )
-    await process_download(message, url, format_id=format_id.strip())
-    await state.clear()
 
 
 @dp.message(F.text)
 @allowed_users_only
-async def handle_url(message: types.Message, state: FSMContext, *args, **kwargs):
-    if not message.text or not (
-        "http" in message.text and " " not in message.text.strip()
-    ):
+async def handle_text(message: types.Message, state: FSMContext):
+    url = extract_url(message.text)
+    if not url:
         return
-    url = message.text.strip()
-    is_audio_service = "music.youtube.com" in url or "soundcloud.com" in url
-    if is_audio_service:
+
+    is_music_service = any(
+        x in url
+        for x in [
+            "music.youtube.com",
+            "soundcloud.com",
+            "spotify.com",
+            "deezer.com",
+            "apple.com/music",
+        ]
+    )
+
+    if is_music_service:
         await process_download(message, url, audio_only=True)
-    elif "youtube.com" in url or "youtu.be" in url:
+    elif ("youtube.com" in url or "youtu.be" in url) and "shorts" not in url:
         await state.update_data(url=url)
         await message.reply(
-            "Виявлено посилання на YouTube. Оберіть дію:",
-            reply_markup=get_youtube_keyboard(),
+            "🎥 Виберіть якість відео:", reply_markup=get_quality_keyboard()
         )
     else:
+        # Instagram, TikTok etc
         await process_download(message, url, audio_only=False)
 
 
-# --- ОСНОВНА ФУНКЦІЯ ОБРОБКИ (ЗБЕРЕЖЕНО ВИПРАВЛЕННЯ ДЛЯ ОБКЛАДИНКИ) ---
 async def process_download(
     message: types.Message,
     url: str,
     audio_only: bool = False,
-    format_id: Optional[str] = None,
+    max_height: Optional[int] = None,
 ):
-    msg = await message.reply("📥 Завантаження почалося...")
-    file_paths: Optional[List[str]] = None
-    download_dir: Optional[str] = None
+    status_msg = await message.answer("⏳ Підготовка...")
 
+    async def update_progress(text: str):
+        try:
+            if status_msg.text != text:
+                await status_msg.edit_text(text, parse_mode="Markdown")
+        except TelegramBadRequest:
+            pass
+        except Exception as e:
+            print(f"Error: {e}")
+
+    download_dir = None
     try:
         file_paths = await download_media(
-            url, audio_only=audio_only, format_id=format_id
+            url,
+            audio_only=audio_only,
+            max_height=max_height,
+            progress_callback=update_progress,
         )
 
-        if file_paths:
-            # Даємо файловій системі час на збереження метаданих перед відправкою
-            await asyncio.sleep(0.5)
-            download_dir = os.path.dirname(file_paths[0])
-
-        if not file_paths or not file_paths[0]:
-            await msg.edit_text(
-                "❌ Не вдалося завантажити медіа. Перевірте посилання або спробуйте пізніше."
-            )
+        if not file_paths:
+            # ТИХИЙ РЕЖИМ ПРИ ПОМИЛЦІ
+            try:
+                await status_msg.delete()
+            except Exception as e:
+                logging.debug(f"Failed to delete status message: {e}")
             return
 
-        if audio_only:
-            await msg.edit_text("🚀 Надсилаю аудіо...")
-            for file_path in file_paths:
-                if os.path.exists(file_path):
-                    # Надсилаємо з унікальним іменем, щоб уникнути кешування TG
-                    unique_filename = f"{os.path.basename(file_path).rsplit('.', 1)[0]}_{int(time.time())}.mp3"
-                    await message.reply_audio(
-                        FSInputFile(file_path, filename=unique_filename)
-                    )
-            await msg.delete()
-            return
+        download_dir = os.path.dirname(file_paths[0])
+        await status_msg.edit_text("📤 *Відправляю...*", parse_mode="Markdown")
 
-        # Логіка для відео та фото
-        media_to_send, files_too_large = [], []
+        media_group = []
         for file_path in file_paths:
             file_size = os.path.getsize(file_path)
-            ext = os.path.splitext(file_path)[1].lower()
-            limit = (
-                TELEGRAM_PHOTO_LIMIT
-                if ext in [".jpg", ".jpeg", ".png"]
-                else TELEGRAM_FILE_LIMIT
-            )
-            if file_size > limit:
-                files_too_large.append(
-                    f"{os.path.basename(file_path)} ({file_size / 1e6:.1f} МБ)"
-                )
+            if file_size > LOCAL_SERVER_LIMIT:
+                await message.reply("⚠️ Файл завеликий.")
                 continue
-            if ext in [".jpg", ".jpeg", ".png", ".webp"]:
-                media_to_send.append(InputMediaPhoto(media=FSInputFile(file_path)))
-            elif ext in [".mp4", ".mkv", ".mov"]:
-                media_to_send.append(InputMediaVideo(media=FSInputFile(file_path)))
 
-        if files_too_large:
-            error_msg = "⚠️ **Деякі файли завеликі:**\n" + "\n".join(
-                f"• {f}" for f in files_too_large
-            )
-            if media_to_send:
-                error_msg += "\n\n✅ Інші файли буде надіслано."
-            await message.reply(error_msg, parse_mode="Markdown")
+            ext = os.path.splitext(file_path)[1].lower()
+            file_obj = FSInputFile(file_path)
 
-        if not media_to_send:
-            await msg.edit_text("❌ Не знайдено медіафайлів для надсилання.")
-            return
-
-        await msg.edit_text(f"🚀 Надсилаю {len(media_to_send)} файл(ів)...")
-        if len(media_to_send) > 1:
-            for i in range(0, len(media_to_send), 10):
-                await message.reply_media_group(media=media_to_send[i : i + 10])
-        elif media_to_send:
-            single_media = media_to_send[0]
-            if isinstance(single_media, InputMediaPhoto):
-                await message.reply_photo(single_media.media)
+            if audio_only and ext in [".mp3", ".m4a", ".flac"]:
+                await message.reply_audio(file_obj, request_timeout=7200)
             else:
-                await message.reply_video(single_media.media)
-        await msg.delete()
+                if ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                    media_group.append(InputMediaPhoto(media=file_obj))
+                elif ext in [".mp4", ".mkv", ".mov", ".webm"]:
+                    media_group.append(InputMediaVideo(media=file_obj))
+
+        if media_group:
+            if len(media_group) == 1:
+                item = media_group[0]
+                if isinstance(item, InputMediaPhoto):
+                    await message.reply_photo(item.media, request_timeout=7200)
+                else:
+                    await message.reply_video(item.media, request_timeout=7200)
+            else:
+                for i in range(0, len(media_group), 10):
+                    await message.reply_media_group(
+                        media=media_group[i : i + 10], request_timeout=7200
+                    )
+
+        try:
+            await status_msg.delete()
+        except Exception as e:
+            logging.debug(f"Error {download_dir}: {e}")
 
     except Exception as e:
-        logging.error(f"Помилка в process_download: {e}", exc_info=True)
-        await msg.edit_text(f"❌ Сталася неочікувана помилка: {e}")
+        logging.error(f"Error: {e}")
+        try:
+            await status_msg.delete()
+        except Exception as ex:
+            logging.debug(f"Failed to delete status message after error: {ex}")
     finally:
         if download_dir and os.path.exists(download_dir):
             try:
                 shutil.rmtree(download_dir)
-                logging.info(f"Видалено директорію: {download_dir}")
             except Exception as e:
-                logging.error(f"Не вдалося видалити директорію {download_dir}: {e}")
+                logging.debug(
+                    f"Failed to remove download directory {download_dir}: {e}"
+                )
 
 
-async def main() -> None:
+async def main():
     if not API_TOKEN:
-        logging.critical("Помилка: не знайдено TELEGRAM_BOT_TOKEN в .env файлі.")
         return
-    bot = Bot(token=API_TOKEN)
+    bot = Bot(token=API_TOKEN, session=session)
     await dp.start_polling(bot)
 
 
