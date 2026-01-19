@@ -5,3 +5,4 @@ mutagen
 pillow
 python-dotenv
 yt-dlp
+aiohttp

@@ -86,6 +86,7 @@ def get_quality_keyboard():
                 text="🎵 Тільки аудіо (MP3)", callback_data="qual_audio"
             )
         ],
+        [InlineKeyboardButton(text="❌ Скасувати", callback_data="qual_cancel")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -139,6 +140,12 @@ async def handle_clean(message: types.Message):
 @dp.callback_query(F.data.startswith("qual_"))
 @allowed_users_only
 async def handle_quality_choice(callback: types.CallbackQuery, state: FSMContext):
+    action = callback.data
+    if action == "qual_cancel":
+        await callback.message.delete()
+        await callback.answer("Скасовано")
+        return
+
     await callback.answer("⏳ Додано в чергу...", show_alert=False)
     await callback.message.edit_text("⏳ Ініціалізація...")
 
@@ -148,7 +155,6 @@ async def handle_quality_choice(callback: types.CallbackQuery, state: FSMContext
         await callback.message.edit_text("❌ Посилання втрачено.")
         return
 
-    action = callback.data
     audio_only = action == "qual_audio"
     max_height = None
     if action == "qual_720":
