@@ -1,34 +1,53 @@
-# 📥 Універсальний Медіа Бот (Telegram)
+# 📥 Universal Media Bot (Telegram)
 
-Потужний бот для завантаження медіа з **YouTube, Instagram, TikTok, SoundCloud, Spotify** та інших платформ.
+A powerful bot for downloading media from **YouTube, Instagram, TikTok, SoundCloud, Spotify**, and other platforms.
 
-🚀 **Головна фішка:** Підтримка завантаження та надсилання файлів розміром до **2000 МБ** (навіть на телефоні!).
-
----
-
-## 🔥 Можливості
-*   📹 **YouTube:** Вибір якості (1080p, 720p...), прогрес-бар, завантаження без реклами.
-*   🎧 **Музика:** Автоматичне завантаження MP3 з YouTube Music, SoundCloud, Spotify з **обкладинками та метаданими**.
-*   📸 **Instagram:** Завантаження Reels, Stories, Постів (каруселі) через реальний акаунт.
-*   💾 **Local API Server:** Використання локального сервера Telegram для обходу ліміту в 50 МБ.
-*   📊 **Прогрес-бар:** Живе відображення процесу завантаження.
-*   🔐 **Приватний доступ:** Бот працює тільки для обраних користувачів.
+🚀 **Main Feature:** Supports downloading and sending files up to **2000 MB** (even on mobile!).
 
 ---
 
-## 🐧 Встановлення на Linux (PC / VPS)
+## 🔥 Features
+*   📹 **YouTube:** Quality selection (1080p, 720p...), progress bar, ad-free downloads.
+*   🎧 **Music:** Automatic MP3 downloads from YouTube Music, SoundCloud, Spotify with **covers and metadata**.
+*   📸 **Instagram:** Download Reels, Stories, and carousel posts using a real account.
+*   💽 **Local API Server:** Uses a local Telegram server to bypass the standard 50 MB upload limit.
+*   📊 **Progress Bar:** Live viewing of the download progress.
+*   🔐 **Private Access:** The bot works only for allowed users.
 
-### 1. Системні вимоги
-Встановіть Python, FFmpeg та Git.
-*   **Arch Linux:** `sudo pacman -S python ffmpeg git base-devel`
-*   **Ubuntu:** `sudo apt install python3 python3-venv ffmpeg git build-essential`
+---
 
-### 2. Встановлення Telegram Bot API (C++ Server)
-Для ліміту 2000 МБ потрібен локальний сервер.
-*   **Arch Linux (AUR):** `yay -S telegram-bot-api`
-*   **Ubuntu/Debian:** [Див. офіційну інструкцію з компіляції](https://github.com/tdlib/telegram-bot-api).
+## 🧠 Installation on Arch Linux (Server/PC) - Automated
 
-### 3. Встановлення бота
+To make the installation as easy as possible on Arch Linux with a `fish` or `bash` shell, an automated setup script is provided. It will install all dependencies, compile the Telegram Bot API server, set up the Python environment, and configure `systemd` user services to keep the bot and server running in the background automatically, even after a reboot.
+
+### Steps:
+1. Clone the repository to your Arch Linux machine:
+   ```bash
+   git clone https://github.com/Btema2/telegram-yt-downloader.git
+   cd telegram-yt-downloader
+   ```
+2. Make the script executable and run it:
+   ```bash
+   chmod +x auto_deploy.sh
+   ./auto_deploy.sh
+   ```
+3. Follow the on-screen prompts to enter your Bot Token, API ID, API Hash (from my.telegram.org), and Allowed User IDs. 
+
+The script will handle everything else, including starting the services in the background.
+
+---
+
+## 💻 Manual Installation on Linux (Ubuntu / General)
+
+### 1. System Requirements
+Install Python, FFmpeg, and Git.
+*   **Ubuntu/Debian:** `sudo apt install python3 python3-venv ffmpeg git build-essential cmake gperf zlib1g-dev libssl-dev`
+
+### 2. Install Telegram Bot API (C++ Server)
+The local server is required for the 2000 MB limit.
+*   **Ubuntu/Debian:** [See official compilation instructions](https://github.com/tdlib/telegram-bot-api) or compile from source.
+
+### 3. Install the Bot
 ```bash
 git clone https://github.com/Btema2/telegram-yt-downloader.git
 cd telegram-yt-downloader
@@ -40,42 +59,42 @@ pip install -r requirements.txt
 
 ---
 
-## 📱 Встановлення на Android (Termux)
-**Увага:** Щоб отримати ліміт **2000 МБ** на телефоні, ми скомпілюємо сервер Telegram вручну. Це займе 30-60 хвилин і потребує ~2 ГБ місця.
+## 📱 Installation on Android (Termux)
+**Note:** To get the **2000 MB** limit on your phone, we will compile the Telegram server manually. This takes 30-60 minutes and requires ~2 GB of space.
 
-### Крок 1: Підготовка Termux
-Завантажте Termux з [F-Droid](https://f-droid.org/en/packages/com.termux/).
-Відкрийте термінал і введіть:
+### Step 1: Termux Preparation
+Download Termux from [F-Droid](https://f-droid.org/en/packages/com.termux/).
+Open the terminal and enter:
 ```bash
 termux-setup-storage
 pkg update && pkg upgrade -y
-# Інструменти для збірки сервера та роботи бота
+# Build tools for the server and bot runtime
 pkg install git cmake clang make zlib openssl gperf python ffmpeg libjpeg-turbo -y
 ```
 
-### Крок 2: Компіляція сервера (Telegram Bot API)
-Це найдовший етап. Не звертайте додаток під час процесу.
+### Step 2: Compile the Server (Telegram Bot API)
+This is the longest step. Do not minimize the app during the process.
 ```bash
-# 1. Скачуємо код сервера
+# 1. Download server code
 git clone --recursive https://github.com/tdlib/telegram-bot-api.git
 cd telegram-bot-api
 
-# 2. Створюємо папку для збірки
+# 2. Create build folder
 mkdir build
 cd build
 
-# 3. Налаштовуємо (Конфігурація)
+# 3. Configure
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX ..
 
-# 4. ЗАПУСК ЗБІРКИ (Це займе час!)
+# 4. RUN BUILD (This takes time!)
 cmake --build . --target install -j4
 ```
-*Якщо телефон гріється або висне, замініть `-j4` на `-j2`.*
+*If the phone heats up or freezes, replace `-j4` with `-j2`.*
 
-Перевірте успіх командою: `telegram-bot-api --version`
+Verify success with: `telegram-bot-api --version`
 
-### Крок 3: Встановлення бота
-Відкрийте **нову сесію** (свайп вправо -> New Session) або поверніться в домашню папку:
+### Step 3: Install the Bot
+Open a **new session** (swipe right -> New Session) or return to the home folder:
 ```bash
 cd ~
 git clone https://github.com/Btema2/telegram-yt-downloader.git
@@ -88,54 +107,54 @@ pip install -r requirements.txt
 
 ---
 
-## ⚙️ Налаштування (.env)
+## ⚙️ Configuration (.env)
 
-Створіть файл `.env`:
+If you are not using `auto_deploy.sh`, create a `.env` file manually:
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Заповніть його (дані для `API_ID` та `API_HASH` візьміть на [my.telegram.org](https://my.telegram.org)):
+Fill it out (get `API_ID` and `API_HASH` from [my.telegram.org](https://my.telegram.org)):
 
 ```ini
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 ALLOWED_USER_IDS=12345678,87654321
 INSTAGRAM_USERNAME=YOUR_USERNAME
 
-# --- НАЛАШТУВАННЯ ДЛЯ 2000 МБ (Linux & Termux) ---
+# --- SETUP FOR 2000 MB (Linux & Termux) ---
 LOCAL_API_URL=http://localhost:8081
 SHARED_FOLDER=downloads
 
-# Отримайте ці дані на my.telegram.org (App development tools)
+# Get these details at my.telegram.org (App development tools) 
 TELEGRAM_API_ID=1234567
 TELEGRAM_API_HASH=abcdef1234567890...
 ```
 
 ---
 
-## 🔑 Вхід в Instagram (Важливо!)
-Щоб завантажувати з Instagram, потрібно створити файл сесії. Введіть команду (на ПК або в Termux):
+## 🔑 Login to Instagram (Important!)
+To download from Instagram, you need to create a session file. Enter the command (on PC or Termux):
 
 ```bash
-instaloader --login=ВАШ_ЛОГІН
+instaloader --login=YOUR_USERNAME
 ```
-Введіть пароль. Це створить файл сесії, який бот підхопить автоматично.
+Enter your password. This will create a session file that the bot will pick up automatically.
 
 ---
 
-## 🚀 Як запускати (Linux & Termux)
+## 🚀 How to Run Manually (Linux & Termux)
 
-Вам потрібно тримати запущеними **два процеси** одночасно. Використовуйте дві вкладки терміналу.
+If you didn't use `auto_deploy.sh`, you need to keep **two processes** running simultaneously. Use two terminal tabs.
 
-### Вкладка 1: Локальний сервер (C++)
-Він відповідає за надсилання великих файлів.
+### Tab 1: Local Server (C++)
+Handles sending large files.
 ```bash
-telegram-bot-api --api-id=ВАШ_API_ID --api-hash=ВАШ_API_HASH --local
+telegram-bot-api --api-id=YOUR_API_ID --api-hash=YOUR_API_HASH --local
 ```
 
-### Вкладка 2: Бот (Python)
-Він обробляє логіку та завантаження.
+### Tab 2: Bot (Python)
+Handles logic and downloading.
 ```bash
 cd telegram-yt-downloader
 source venv/bin/activate
@@ -144,14 +163,13 @@ python main_bot.py
 
 ---
 
-## 🛠 Команди
-*   `/start` — Перевірка роботи.
-*   `/clean` — Очистити папку `downloads` від сміття (доступно тільки дозволеним користувачам).
-*   **Посилання** — Просто надішліть лінк на TikTok, YouTube, Instagram тощо.
+## 🛠 Commands
+*   `/start` — Check if the bot is working.
+*   `/clean` — Clear the `downloads` folder from garbage (available only to allowed users).
+*   **Links** — Just send a link to TikTok, YouTube, Instagram, etc.
 
-## 📜 Ліцензія
+## 📜 License
 ```MIT License.
-MIT License.
 
 Copyright (c) 2025 Btema2
 
