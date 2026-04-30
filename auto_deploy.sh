@@ -67,38 +67,39 @@ pip install --upgrade pip
 pip install -r requirements.txt
 echo -e "${GREEN}Залежності Python встановлено!${NC}"
 
-# ... решта незмінна ...
-# 5. Створення systemd сервісів (user-level)
+# 5. Створення systemd сервісів
 echo -e "\n${BLUE}[5/6] Створення systemd сервісів для фонової роботи...${NC}"
 
-mkdir -p ~/.config/systemd/user
 WORK_DIR=$(pwd)
+CURRENT_USER=$(whoami)
 TG_API_BIN="${WORK_DIR}/telegram-bot-api/build/telegram-bot-api"
 
 # Сервіс сервера Telegram Bot API
-cat > ~/.config/systemd/user/telegram-bot-api.service <<EOL
+cat > telegram-bot-api.service <<EOL
 [Unit]
 Description=Local Telegram Bot API Server
 After=network.target
 
 [Service]
 Type=simple
+User=${CURRENT_USER}
 ExecStart=${TG_API_BIN} --local --api-id=${api_id} --api-hash=${api_hash} --dir=${WORK_DIR}/tg-api-workdir
 Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOL
 
 # Сервіс самого бота
-cat > ~/.config/systemd/user/tg-media-bot.service <<EOL
+cat > tg-media-bot.service <<EOL
 [Unit]
 Description=Telegram Media Downloader Bot
 After=network.target telegram-bot-api.service
 
 [Service]
 Type=simple
+User=${CURRENT_USER}
 WorkingDirectory=${WORK_DIR}
 ExecStart=${WORK_DIR}/venv/bin/python3 main_bot.py
 Restart=always
@@ -106,18 +107,18 @@ RestartSec=5
 Environment="PATH=${WORK_DIR}/venv/bin:%E/PATH"
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOL
 
-systemctl --user daemon-reload
+$SUDO mv telegram-bot-api.service /etc/systemd/system/
+$SUDO mv tg-media-bot.service /etc/systemd/system/
+
+$SUDO systemctl daemon-reload
 
 # 6. Запуск і додавання в автозавантаження
 echo -e "\n${BLUE}[6/6] Запуск сервісів та додавання в автозавантаження...${NC}"
-systemctl --user enable --now telegram-bot-api.service
-systemctl --user enable --now tg-media-bot.service
-
-# Дозволити сервісам користувача працювати навіть після виходу з ssh
-loginctl enable-linger $USER
+$SUDO systemctl enable --now telegram-bot-api.service
+$SUDO systemctl enable --now tg-media-bot.service
 
 echo -e "\n${GREEN}======================================================================${NC}"
 echo -e "${GREEN}ГОТОВО! Ваш бот та локальний сервер успішно встановлені та запущені.${NC}"
@@ -126,6 +127,6 @@ echo -e "🔗 Локальний Telegram API сервер працює за а�
 echo -e "🔄 Бот підключено до локального сервера (через LOCAL_API_URL у .env)."
 echo -e "📦 Тепер ви можете надсилати та приймати файли розміром до 2 ГБ!"
 echo -e ""
-echo -e "📋 Перевірити статус API сервера: ${BLUE}systemctl --user status telegram-bot-api${NC}"
-echo -e "📋 Перевірити статус бота:        ${BLUE}systemctl --user status tg-media-bot${NC}"
-echo -e "📋 Подивитись логи бота:          ${BLUE}journalctl --user -u tg-media-bot -f${NC}"
+echo -e "📋 Перевірити статус API сервера: ${BLUE}sudo systemctl status telegram-bot-api${NC}"
+echo -e "📋 Перевірити статус бота:        ${BLUE}sudo systemctl status tg-media-bot${NC}"
+echo -e "📋 Подивитись логи бота:          ${BLUE}sudo journalctl -u tg-media-bot -f${NC}"
