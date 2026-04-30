@@ -6,7 +6,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}=== Автоматичне налаштування Telegram YT Downloader (Arch Linux) ===${NC}"
+echo -e "${BLUE}=== Автоматичне налаштування Telegram YT Downloader (Debian/Ubuntu) ===${NC}"
 
 # 1. Запит даних у користувача
 echo -e "\n${BLUE}[1/6] Налаштування змінних оточення...${NC}"
@@ -32,8 +32,9 @@ else
 fi
 
 # 2. Встановлення системних пакетів
-echo -e "\n${BLUE}[2/6] Встановлення залежностей Arch Linux (потрібен sudo)...${NC}"
-sudo pacman -Syu --needed base-devel cmake gperf zlib openssl git python python-pip python-virtualenv ffmpeg
+echo -e "\n${BLUE}[2/6] Встановлення залежностей Debian/Ubuntu (потрібен sudo)...${NC}"
+sudo apt-get update
+sudo apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg
 
 # 3. Завантаження та збірка Telegram Bot API (якщо не зібрано)
 echo -e "\n${BLUE}[3/6] Налаштування Telegram Bot API Server...${NC}"
@@ -55,13 +56,14 @@ fi
 # 4. Налаштування Python
 echo -e "\n${BLUE}[4/6] Налаштування Python віртуального середовища...${NC}"
 if [ ! -d "venv" ]; then
-    python -m venv venv
+    python3 -m venv venv
 fi
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 echo -e "${GREEN}Залежності Python встановлено!${NC}"
 
+# ... решта незмінна ...
 # 5. Створення systemd сервісів (user-level)
 echo -e "\n${BLUE}[5/6] Створення systemd сервісів для фонової роботи...${NC}"
 
@@ -94,7 +96,7 @@ After=network.target telegram-bot-api.service
 [Service]
 Type=simple
 WorkingDirectory=${WORK_DIR}
-ExecStart=${WORK_DIR}/venv/bin/python main_bot.py
+ExecStart=${WORK_DIR}/venv/bin/python3 main_bot.py
 Restart=always
 RestartSec=5
 Environment="PATH=${WORK_DIR}/venv/bin:%E/PATH"

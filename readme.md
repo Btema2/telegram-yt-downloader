@@ -16,12 +16,12 @@ A powerful bot for downloading media from **YouTube, Instagram, TikTok, SoundClo
 
 ---
 
-## 🧠 Installation on Arch Linux (Server/PC) - Automated
+## 🧠 Installation on Debian/Ubuntu (Server/PC) - Automated
 
-To make the installation as easy as possible on Arch Linux with a `fish` or `bash` shell, an automated setup script is provided. It will install all dependencies, compile the Telegram Bot API server, set up the Python environment, and configure `systemd` user services to keep the bot and server running in the background automatically, even after a reboot.
+To make the installation as easy as possible on Debian/Ubuntu with a `fish` or `bash` shell, an automated setup script is provided. It will install all dependencies, compile the Telegram Bot API server, set up the Python environment, and configure `systemd` user services to keep the bot and server running in the background automatically, even after a reboot.
 
 ### Steps:
-1. Clone the repository to your Arch Linux machine:
+1. Clone the repository to your Debian/Ubuntu machine:
    ```bash
    git clone https://github.com/Btema2/telegram-yt-downloader.git
    cd telegram-yt-downloader
