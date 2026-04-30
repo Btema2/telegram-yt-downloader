@@ -32,9 +32,13 @@ else
 fi
 
 # 2. Встановлення системних пакетів
-echo -e "\n${BLUE}[2/6] Встановлення залежностей Debian/Ubuntu (потрібен sudo)...${NC}"
-sudo apt-get update
-sudo apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg
+echo -e "\n${BLUE}[2/6] Встановлення залежностей Debian/Ubuntu...${NC}"
+SUDO=""
+if [ "$EUID" -ne 0 ]; then
+    SUDO="sudo"
+fi
+$SUDO apt-get update
+$SUDO apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg
 
 # 3. Завантаження та збірка Telegram Bot API (якщо не зібрано)
 echo -e "\n${BLUE}[3/6] Налаштування Telegram Bot API Server...${NC}"
