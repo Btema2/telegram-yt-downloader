@@ -9,7 +9,7 @@ NC='\033[0m'
 echo -e "${BLUE}=== Автоматичне налаштування Telegram YT Downloader (Debian/Ubuntu) ===${NC}"
 
 # 1. Запит даних у користувача
-echo -e "\n${BLUE}[1/6] Налаштування змінних оточення...${NC}"
+echo -e "\n${BLUE}[1/7] Налаштування змінних оточення...${NC}"
 if [ ! -f .env ]; then
     read -p "Введіть TELEGRAM_BOT_TOKEN: " bot_token
     read -p "Введіть ваші ALLOWED_USER_IDS (через кому, напр. 12345678,87654321): " user_ids
@@ -32,7 +32,7 @@ else
 fi
 
 # 2. Встановлення системних пакетів
-echo -e "\n${BLUE}[2/6] Встановлення залежностей Debian/Ubuntu...${NC}"
+echo -e "\n${BLUE}[2/7] Встановлення залежностей Debian/Ubuntu...${NC}"
 SUDO=""
 if [ "$EUID" -ne 0 ]; then
     SUDO="sudo"
@@ -41,7 +41,7 @@ $SUDO apt-get update
 $SUDO apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg curl
 
 # 3. Завантаження та збірка Telegram Bot API (якщо не зібрано)
-echo -e "\n${BLUE}[3/6] Налаштування Telegram Bot API Server...${NC}"
+echo -e "\n${BLUE}[3/7] Налаштування Telegram Bot API Server...${NC}"
 if [ ! -f "telegram-bot-api/build/telegram-bot-api" ]; then
     echo "Компіляція Telegram Bot API. Це може зайняти 5-15 хвилин..."
     if [ ! -d "telegram-bot-api" ]; then
@@ -58,7 +58,7 @@ else
 fi
 
 # 4. Налаштування Python
-echo -e "\n${BLUE}[4/6] Налаштування Python віртуального середовища...${NC}"
+echo -e "\n${BLUE}[4/7] Налаштування Python віртуального середовища...${NC}"
 if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
@@ -67,8 +67,20 @@ pip install --upgrade pip
 pip install -r requirements.txt
 echo -e "${GREEN}Залежності Python встановлено!${NC}"
 
-# 5. Створення systemd сервісів
-echo -e "\n${BLUE}[5/6] Створення systemd сервісів для фонової роботи...${NC}"
+# 5. Авторизація Instaloader (Instagram)
+echo -e "\n${BLUE}[5/7] Налаштування Instagram (для завантаження Reels/Posts)...${NC}"
+read -p "Бажаєте увійти в Instagram зараз? Це потрібно для завантаження контенту (y/n): " inst_login
+if [[ "$inst_login" == "y" || "$inst_login" == "Y" ]]; then
+    read -p "Введіть ваш логін Instagram: " inst_username
+    echo "Зараз Instaloader попросить вас ввести пароль від Instagram."
+    venv/bin/instaloader --login "$inst_username"
+    echo -e "${GREEN}Instagram сесію успішно збережено!${NC}"
+else
+    echo "Пропускаємо вхід в Instagram. Ви можете зробити це пізніше вручну."
+fi
+
+# 6. Створення systemd сервісів
+echo -e "\n${BLUE}[6/7] Створення systemd сервісів для фонової роботи...${NC}"
 
 WORK_DIR=$(pwd)
 CURRENT_USER=$(whoami)
@@ -120,8 +132,8 @@ $SUDO mv tg-media-bot.service /etc/systemd/system/
 
 $SUDO systemctl daemon-reload
 
-# 6. Запуск і додавання в автозавантаження
-echo -e "\n${BLUE}[6/6] Запуск сервісів та додавання в автозавантаження...${NC}"
+# 7. Запуск і додавання в автозавантаження
+echo -e "\n${BLUE}[7/7] Запуск сервісів та додавання в автозавантаження...${NC}"
 $SUDO systemctl enable --now telegram-bot-api.service
 $SUDO systemctl enable --now tg-media-bot.service
 
