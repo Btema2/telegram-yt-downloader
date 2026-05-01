@@ -74,6 +74,9 @@ WORK_DIR=$(pwd)
 CURRENT_USER=$(whoami)
 TG_API_BIN="${WORK_DIR}/telegram-bot-api/build/telegram-bot-api"
 
+# Створення робочої папки для API сервера, якщо її немає
+mkdir -p "${WORK_DIR}/tg-api-workdir"
+
 # Сервіс сервера Telegram Bot API
 cat > telegram-bot-api.service <<EOL
 [Unit]
