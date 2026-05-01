@@ -38,7 +38,7 @@ if [ "$EUID" -ne 0 ]; then
     SUDO="sudo"
 fi
 $SUDO apt-get update
-$SUDO apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg
+$SUDO apt-get install -y build-essential cmake gperf zlib1g-dev libssl-dev git python3 python3-pip python3-venv ffmpeg curl
 
 # 3. Завантаження та збірка Telegram Bot API (якщо не зібрано)
 echo -e "\n${BLUE}[3/6] Налаштування Telegram Bot API Server...${NC}"
@@ -96,14 +96,16 @@ cat > tg-media-bot.service <<EOL
 [Unit]
 Description=Telegram Media Downloader Bot
 After=network.target telegram-bot-api.service
+Requires=telegram-bot-api.service
 
 [Service]
 Type=simple
 User=${CURRENT_USER}
 WorkingDirectory=${WORK_DIR}
+ExecStartPre=/bin/bash -c 'for i in \$(seq 1 30); do curl -sf http://localhost:8081 >/dev/null 2>&1 && break || sleep 2; done'
 ExecStart=${WORK_DIR}/venv/bin/python3 main_bot.py
 Restart=always
-RestartSec=5
+RestartSec=10
 Environment="PATH=${WORK_DIR}/venv/bin:%E/PATH"
 
 [Install]
